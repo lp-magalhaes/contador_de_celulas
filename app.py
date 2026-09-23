@@ -5,8 +5,8 @@ import pandas as pd
 
 st.set_page_config(page_title="Analisador de Células", layout="wide", page_icon="🔬")
 
-st.title("🔬 Analisador de Células (Vermelhas e Verdes)")
-st.write("Faça o upload de uma ou mais imagens para contar os invólucros celulares e medir a luminosidade média da imagem.")
+st.title("🔬 Analisador de Células Multicores")
+st.write("Faça o upload de imagens para contar invólucros celulares (Vermelhos, Verdes, Azuis e Amarelos) e medir a luminosidade.")
 
 # Upload de múltiplos arquivos
 arquivos_uploaddos = st.file_uploader(
@@ -21,7 +21,6 @@ if arquivos_uploaddos:
     st.write(f"### Processando {len(arquivos_uploaddos)} imagem(ns)...")
     
     for arquivo in arquivos_uploaddos:
-        # Converter o arquivo enviado para o formato do OpenCV
         file_bytes = np.asarray(bytearray(arquivo.read()), dtype=np.uint8)
         img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
         
@@ -29,61 +28,85 @@ if arquivos_uploaddos:
             st.error(f"Erro ao ler o arquivo: {arquivo.name}")
             continue
             
-        # Converter para HSV (detecção de cor) e Tons de Cinza (luminosidade)
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
         # 1. CÁLCULO DA LUMINOSIDADE MÉDIA DA IMAGEM INTEIRA
         luminosidade_media_imagem = round(float(cv2.mean(gray)[0]), 2)
 
-        # --- DEFINIÇÃO DOS LIMITES DE CORES ---
-        # Baixamos a saturação/brilho mínimo para 40 para pegar bordas apagadas
+        # --- DEFINIÇÃO DOS LIMITES DE CORES (HSV) ---
+        # Vermelho (Faixa 1 e 2)
         lower_red1, upper_red1 = np.array([0, 40, 40]), np.array([10, 255, 255])
         lower_red2, upper_red2 = np.array([160, 40, 40]), np.array([179, 255, 255])
+        
+        # Verde
         lower_green, upper_green = np.array([35, 40, 40]), np.array([85, 255, 255])
+        
+        # Amarelo (Fica entre o Vermelho e o Verde)
+        lower_yellow, upper_yellow = np.array([11, 40, 40]), np.array([34, 255, 255])
+        
+        # Azul (Fica após o Verde)
+        lower_blue, upper_blue = np.array([90, 40, 40]), np.array([130, 255, 255])
 
-        # Criar Máscaras
+        # Criar Máscaras de Cor
         mask_red1 = cv2.inRange(hsv, lower_red1, upper_red1)
         mask_red2 = cv2.inRange(hsv, lower_red2, upper_red2)
         mask_red = cv2.addWeighted(mask_red1, 1.0, mask_red2, 1.0, 0.0)
+        
         mask_green = cv2.inRange(hsv, lower_green, upper_green)
+        mask_yellow = cv2.inRange(hsv, lower_yellow, upper_yellow)
+        mask_blue = cv2.inRange(hsv, lower_blue, upper_blue)
 
         # --- OPERAÇÕES MORFOLÓGICAS ---
-        # Kernel circular para fechar as bordas pontilhadas/apagadas do invólucro
+        # Fecha as bordas pontilhadas e elimina pequenos pontos isolados
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
-        
         mask_red = cv2.morphologyEx(mask_red, cv2.MORPH_CLOSE, kernel)
         mask_green = cv2.morphologyEx(mask_green, cv2.MORPH_CLOSE, kernel)
+        mask_yellow = cv2.morphologyEx(mask_yellow, cv2.MORPH_CLOSE, kernel)
+        mask_blue = cv2.morphologyEx(mask_blue, cv2.MORPH_CLOSE, kernel)
 
-        # Encontrar contornos externos (RETR_EXTERNAL ignora o que está dentro)
+        # Encontrar contornos externos
         contornos_vermelhos, _ = cv2.findContours(mask_red, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         contornos_verdes, _ = cv2.findContours(mask_green, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contornos_amarelos, _ = cv2.findContours(mask_yellow, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contornos_azuis, _ = cv2.findContours(mask_blue, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
+        # Inicializar contadores
         qtd_vermelhas = 0
         qtd_verdes = 0
+        qtd_amarelas = 0
+        qtd_azuis = 0
 
-        # ÁREA MÍNIMA DO INVÓLUCRO (Ajuste se células reais sumirem)
+        # ÁREA MÍNIMA DO INVÓLUCRO (Filtro de ruído)
         area_minima_involucro = 150 
 
         # Processar Células Vermelhas
         for c in contornos_vermelhos:
-            if cv2.contourArea(c) < area_minima_involucro: 
-                continue  
-            qtd_vermelhas += 1
+            if cv2.contourArea(c) >= area_minima_involucro: qtd_vermelhas += 1
 
         # Processar Células Verdes
         for c in contornos_verdes:
-            if cv2.contourArea(c) < area_minima_involucro: 
-                continue  
-            # CORREÇÃO: Removido o incremento acidental de células vermelhas aqui
-            qtd_verdes += 1
+            if cv2.contourArea(c) >= area_minima_involucro: qtd_verdes += 1
+
+        # Processar Células Amarelas
+        for c in contornos_amarelos:
+            if cv2.contourArea(c) >= area_minima_involucro: qtd_amarelas += 1
+
+        # Processar Células Azuis
+        for c in contornos_azuis:
+            if cv2.contourArea(c) >= area_minima_involucro: qtd_azuis += 1
             
+        # Calcular o total geral desta imagem
+        total_celulas = qtd_vermelhas + qtd_verdes + qtd_amarelas + qtd_azuis
+
         # Adicionar os dados consolidados da imagem
         dados_resumo.append({
             "Imagem": arquivo.name,
             "Invólucros Vermelhos": qtd_vermelhas,
             "Invólucros Verdes": qtd_verdes,
-            "Total de Células": qtd_vermelhas + qtd_verdes,
+            "Invólucros Amarelos": qtd_amarelas,
+            "Invólucros Azuis": qtd_azuis,
+            "Total de Células": total_celulas,
             "Luminosidade Média da Imagem": luminosidade_media_imagem
         })
 
@@ -92,16 +115,14 @@ if arquivos_uploaddos:
         df_resumo = pd.DataFrame(dados_resumo)
         
         st.success("Processamento concluído com sucesso!")
-        
         st.write("### Resultados Analíticos por Imagem")
         st.dataframe(df_resumo, use_container_width=True)
         
-        # Botão de download do arquivo de Resumo
         csv_resumo = df_resumo.to_csv(index=False, sep=";").encode('utf-8')
         st.download_button(
-            label="📥 Baixar Relatório de Células e Luminosidade (CSV)",
+            label="📥 Baixar Relatório Multicores (CSV)",
             data=csv_resumo,
-            file_name="analise_celulas_luminosidade.csv",
+            file_name="analise_multicores_celulas.csv",
             mime="text/csv"
         )
     else:

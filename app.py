@@ -34,11 +34,10 @@ if arquivos_uploaddos:
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
         # 1. CÁLCULO DA LUMINOSIDADE MÉDIA DA IMAGEM INTEIRA
-        luminosidade_media_imagem = round(cv2.mean(gray)[0], 2)
+        luminosidade_media_imagem = round(float(cv2.mean(gray)[0]), 2)
 
         # --- DEFINIÇÃO DOS LIMITES DE CORES ---
-        # Alargamos um pouco o range de Saturação (S) e Valor (V) de 100 para 40 
-        # para capturar bordas mais apagadas ou claras.
+        # Baixamos a saturação/brilho mínimo para 40 para pegar bordas apagadas
         lower_red1, upper_red1 = np.array([0, 40, 40]), np.array([10, 255, 255])
         lower_red2, upper_red2 = np.array([160, 40, 40]), np.array([179, 255, 255])
         lower_green, upper_green = np.array([35, 40, 40]), np.array([85, 255, 255])
@@ -50,37 +49,36 @@ if arquivos_uploaddos:
         mask_green = cv2.inRange(hsv, lower_green, upper_green)
 
         # --- OPERAÇÕES MORFOLÓGICAS ---
-        # Criamos um elemento estruturante circular para fechar as bordas pontilhadas/apagadas
+        # Kernel circular para fechar as bordas pontilhadas/apagadas do invólucro
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
         
-        # O MORPH_CLOSE conecta bordas próximas e fecha pequenos buracos/pontos de ruído
         mask_red = cv2.morphologyEx(mask_red, cv2.MORPH_CLOSE, kernel)
         mask_green = cv2.morphologyEx(mask_green, cv2.MORPH_CLOSE, kernel)
 
-        # Encontrar contornos externos (RETR_EXTERNAL garante que não pegamos o que sobrou dentro)
+        # Encontrar contornos externos (RETR_EXTERNAL ignora o que está dentro)
         contornos_vermelhos, _ = cv2.findContours(mask_red, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         contornos_verdes, _ = cv2.findContours(mask_green, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         qtd_vermelhas = 0
         qtd_verdes = 0
 
-        # AREA MÍNIMA DO INVÓLUCRO (Ajuste esse valor se as células reais sumirem)
+        # ÁREA MÍNIMA DO INVÓLUCRO (Ajuste se células reais sumirem)
         area_minima_involucro = 150 
 
         # Processar Células Vermelhas
         for c in contornos_vermelhos:
             if cv2.contourArea(c) < area_minima_involucro: 
-                continue  # Ignora os pequenos pontos internos e ruídos menores
+                continue  
             qtd_vermelhas += 1
 
         # Processar Células Verdes
         for c in contornos_verdes:
             if cv2.contourArea(c) < area_minima_involucro: 
-                continue  # Ignora os pequenos pontos internos e ruídos menores
-            qtd_vermelhas += 1 # Nota: corrigido bug do script original que somava na variável errada
+                continue  
+            # CORREÇÃO: Removido o incremento acidental de células vermelhas aqui
             qtd_verdes += 1
             
-        # Adicionar os dados consolidados da imagem (Contagem + Luminosidade Média Global)
+        # Adicionar os dados consolidados da imagem
         dados_resumo.append({
             "Imagem": arquivo.name,
             "Invólucros Vermelhos": qtd_vermelhas,

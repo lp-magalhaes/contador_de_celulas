@@ -31,6 +31,15 @@ if arquivos_uploaddos:
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
+        # --- CÁLCULO DO FATOR DE CONVERSÃO PARA MICRÔMETROS ---
+        # Dimensões reais conhecidas: 320 x 320 micrometros
+        altura_px, largura_px = img.shape[:2]
+        area_total_px = altura_px * largura_px
+        area_total_um2 = 320 * 320  # 102400 um^2
+        
+        # Fator que converte 1 pixel quadrado para micrometro quadrado
+        fator_conversao_area = area_total_um2 / area_total_px
+
         # 1. CÁLCULO DA LUMINOSIDADE MÉDIA DA IMAGEM INTEIRA
         luminosidade_media_imagem = round(float(cv2.mean(gray)[0]), 2)
 
@@ -71,33 +80,54 @@ if arquivos_uploaddos:
         contornos_amarelos, _ = cv2.findContours(mask_yellow, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         contornos_azuis, _ = cv2.findContours(mask_blue, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-        # Inicializar contadores
-        qtd_vermelhas = 0
-        qtd_verdes = 0
-        qtd_amarelas = 0
-        qtd_azuis = 0
-
         # ÁREA MÍNIMA DO INVÓLUCRO (Filtro de ruído)
         area_minima_involucro = 150 
 
+        # Lista para guardar o tamanho de todas as células detectadas nesta imagem
+        areas_celulas_um2 = []
+
         # Processar Células Vermelhas
+        qtd_vermelhas = 0
         for c in contornos_vermelhos:
-            if cv2.contourArea(c) >= area_minima_involucro: qtd_vermelhas += 1
+            area_px = cv2.contourArea(c)
+            if area_px >= area_minima_involucro: 
+                qtd_vermelhas += 1
+                areas_celulas_um2.append(area_px * fator_conversao_area)
 
         # Processar Células Verdes
+        qtd_verdes = 0
         for c in contornos_verdes:
-            if cv2.contourArea(c) >= area_minima_involucro: qtd_verdes += 1
+            area_px = cv2.contourArea(c)
+            if area_px >= area_minima_involucro: 
+                qtd_verdes += 1
+                areas_celulas_um2.append(area_px * fator_conversao_area)
 
         # Processar Células Amarelas
+        qtd_amarelas = 0
         for c in contornos_amarelos:
-            if cv2.contourArea(c) >= area_minima_involucro: qtd_amarelas += 1
+            area_px = cv2.contourArea(c)
+            if area_px >= area_minima_involucro: 
+                qtd_amarelas += 1
+                areas_celulas_um2.append(area_px * fator_conversao_area)
 
         # Processar Células Azuis
+        qtd_azuis = 0
         for c in contornos_azuis:
-            if cv2.contourArea(c) >= area_minima_involucro: qtd_azuis += 1
+            area_px = cv2.contourArea(c)
+            if area_px >= area_minima_involucro: 
+                qtd_azuis += 1
+                areas_celulas_um2.append(area_px * fator_conversao_area)
             
         # Calcular o total geral desta imagem
         total_celulas = qtd_vermelhas + qtd_verdes + qtd_amarelas + qtd_azuis
+
+        # --- CÁLCULO DAS MÉTRICAS DE ÁREA ---
+        if areas_celulas_um2:
+            area_media = round(float(np.mean(areas_celulas_um2)), 2)
+            area_maxima = round(float(np.max(areas_celulas_um2)), 2)
+            area_minima = round(float(np.min(areas_celulas_um2)), 2)
+        else:
+            area_media, area_maxima, area_minima = 0.0, 0.0, 0.0
 
         # Adicionar os dados consolidados da imagem
         dados_resumo.append({
@@ -107,7 +137,10 @@ if arquivos_uploaddos:
             "Invólucros Amarelos": qtd_amarelas,
             "Invólucros Azuis": qtd_azuis,
             "Total de Células": total_celulas,
-            "Luminosidade Média da Imagem": luminosidade_media_imagem
+            "Luminosidade Média da Imagem": luminosidade_media_imagem,
+            "Área Média (µm²)": area_media,
+            "Área Máxima (µm²)": area_maxima,
+            "Área Mínima (µm²)": area_minima
         })
 
     # Mostrar resultados e gerar o botão de download do CSV

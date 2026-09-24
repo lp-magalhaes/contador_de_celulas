@@ -126,8 +126,14 @@ if arquivos_uploaddos:
             area_media = round(float(np.mean(areas_celulas_um2)), 2)
             area_maxima = round(float(np.max(areas_celulas_um2)), 2)
             area_minima = round(float(np.min(areas_celulas_um2)), 2)
+            
+            # Cálculo da soma total das áreas para normalizar a luminosidade
+            area_total_celulas_um2 = sum(areas_celulas_um2)
+            # Luminosidade dividida pela área total ocupada pelas células
+            luminosidade_por_area = round(luminosidade_media_imagem / area_total_celulas_um2, 6)
         else:
             area_media, area_maxima, area_minima = 0.0, 0.0, 0.0
+            luminosidade_por_area = 0.0
 
         # Adicionar os dados consolidados da imagem
         dados_resumo.append({
@@ -140,7 +146,8 @@ if arquivos_uploaddos:
             "Luminosidade Média da Imagem": luminosidade_media_imagem,
             "Área Média (µm²)": area_media,
             "Área Máxima (µm²)": area_maxima,
-            "Área Mínima (µm²)": area_minima
+            "Área Mínima (µm²)": area_minima,
+            "Luminosidade por Área (L/µm²)": luminosidade_por_area
         })
 
     # Mostrar resultados e gerar o botão de download do CSV

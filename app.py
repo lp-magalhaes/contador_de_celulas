@@ -36,7 +36,8 @@ if arquivos_uploaddos:
         
         # Extração do canal L (Luminosidade do HSL)
         canal_l = hls[:, :, 1]
-        luminosidade_media_hsl = round(float(cv2.mean(canal_l)), 2)
+        # CORREÇÃO DA TUPLA: Adicionado [0] para extrair o valor numérico correto
+        luminosidade_media_hsl = round(float(cv2.mean(canal_l)[0]), 2)
 
         # --- CÁLCULO DO FATOR DE CONVERSÃO PARA MICRÔMETROS ---
         altura_px, largura_px = img.shape[:2]

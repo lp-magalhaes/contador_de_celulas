@@ -71,11 +71,11 @@ if arquivos_uploaddos:
         mascara_objetos_dinamica[marcadores > 1] = 255
 
         # --- DEFINIÇÃO DOS LIMITES DE CORES ORIGINAIS (HSV) ---
-        lower_red1, upper_red1 = np.array(), np.array()
-        lower_red2, upper_red2 = np.array(), np.array()
-        lower_green, upper_green = np.array(), np.array()
-        lower_yellow, upper_yellow = np.array(), np.array()
-        lower_blue, upper_blue = np.array(), np.array()
+        lower_red1, upper_red1 = np.array([0, 40, 40]), np.array([10, 255, 255])
+        lower_red2, upper_red2 = np.array([160, 40, 40]), np.array([179, 255, 255])
+        lower_green, upper_green = np.array([35, 40, 40]), np.array([85, 255, 255])
+        lower_yellow, upper_yellow = np.array([11, 40, 40]), np.array([34, 255, 255])
+        lower_blue, upper_blue = np.array([90, 40, 40]), np.array([130, 255, 255])
 
         mask_red1 = cv2.inRange(hsv, lower_red1, upper_red1)
         mask_red2 = cv2.inRange(hsv, lower_red2, upper_red2)
@@ -96,17 +96,14 @@ if arquivos_uploaddos:
         contornos_azuis, _ = cv2.findContours(mask_blue, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         # --- CÁLCULO DO FILTRO DE TAMANHO ADAPTATIVO (AUTOMÁTICO) ---
-         todos_contornos = list(contornos_vermelhos) + list(contornos_verdes) + list(contornos_amarelos) + list(contornos_azuis)
-         areas_brutas = [cv2.contourArea(c) for c in todos_contornos if cv2.contourArea(c) > 0]
-         
-         if areas_brutas:
-             # Define o limite mínimo dinamicamente como 15% da área mediana das células detectadas
-             # Isso elimina sujeiras pontuais sem cortar células reais
-             area_minima_adaptativa = np.median(areas_brutas) * 0.15
-             # Garante uma barreira física mínima para ruídos de câmera digital (fundo granulado)
-             area_minima_involucro = max(20.0, area_minima_adaptativa)
-         else:
-             area_minima_involucro = 150.0
+        todos_contornos = list(contornos_vermelhos) + list(contornos_verdes) + list(contornos_amarelos) + list(contornos_azuis)
+        areas_brutas = [cv2.contourArea(c) for c in todos_contornos if cv2.contourArea(c) > 0]
+        
+        if areas_brutas:
+            area_minima_adaptativa = np.median(areas_brutas) * 0.15
+            area_minima_involucro = max(20.0, area_minima_adaptativa)
+        else:
+            area_minima_involucro = 150.0
 
         areas_celulas_um2 = []
 

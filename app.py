@@ -3,24 +3,10 @@ import cv2
 import numpy as np
 import pandas as pd
 
-st.set_page_config(page_title="Analisador de Células Avançado", layout="wide", page_icon="🔬")
+st.set_page_config(page_title="Analisador de Células Automático", layout="wide", page_icon="🔬")
 
-st.title("🔬 Analisador de Células Dinâmico (HSL & Precisão Avançada)")
-st.write("Upload de imagens para contagem e medição de células com segmentação adaptativa por cor e métricas em HSL.")
-
-# Painel Lateral para ajuste fino da sensibilidade dinâmica
-st.sidebar.header("🎛️ Ajuste de Sensibilidade")
-fator_ajuste_dinamico = st.sidebar.slider(
-    "Sensibilidade de Captura (Filtro Adaptativo)", 
-    min_value=0.5, max_value=1.5, value=1.0, step=0.1,
-    help="Valores menores tornam o filtro mais rígido (evita ruído). Valores maiores capturam células mais fracas."
-)
-
-area_minima_involucro = st.sidebar.number_input(
-    "Área Mínima da Célula (px)", 
-    min_value=10, max_value=1000, value=150, step=10,
-    help="Elimina pequenos ruídos ou poeira que não sejam células."
-)
+st.title("🔬 Analisador de Células Inteligente (Separação Automática)")
+st.write("Upload de imagens com algoritmo Watershed para separar automaticamente células coladas e medição em HSL.")
 
 # Upload de múltiplos arquivos
 arquivos_uploaddos = st.file_uploader(
@@ -44,13 +30,13 @@ if arquivos_uploaddos:
             
         img_marcada = img.copy()
         
-        # --- MUDANÇA PARA ESPAÇO DE CORES HSL (HLS no OpenCV) ---
+        # --- ESPAÇO DE CORES HSL (Para Luminosidade) e HSV (Para Cores) ---
         hls = cv2.cvtColor(img, cv2.COLOR_BGR2HLS)
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         
         # Extração do canal L (Luminosidade do HSL)
         canal_l = hls[:, :, 1]
-        luminosidade_media_hsl = round(float(cv2.mean(canal_l)[0]), 2)
+        luminosidade_media_hsl = round(float(cv2.mean(canal_l)), 2)
 
         # --- CÁLCULO DO FATOR DE CONVERSÃO PARA MICRÔMETROS ---
         altura_px, largura_px = img.shape[:2]
@@ -58,21 +44,40 @@ if arquivos_uploaddos:
         area_total_um2 = 320 * 320  # 102400 um²
         fator_conversao_area = area_total_um2 / area_total_px
 
-        # --- ABORDAGEM DINÂMICA DE IDENTIFICAÇÃO ---
-        suavizada = cv2.bilateralFilter(canal_l, 9, 75, 75)
+        # --- SEPARAÇÃO AUTOMÁTICA DE CÉLULAS COLADAS (WATERSHED) ---
+        # 1. Suavização para remover texturas internas indesejadas das células
+        suavizada = cv2.GaussianBlur(canal_l, (5, 5), 0)
         
-        _, mascara_objetos_dinamica = cv2.threshold(
-            suavizada, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
-        )
+        # 2. Limiarização Automática por Otsu (Sem parâmetros manuais)
+        _, thresh = cv2.threshold(suavizada, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
         
-        if fator_ajuste_dinamico != 1.0:
-            kernel_ajuste = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-            if fator_ajuste_dinamico > 1.0:
-                mascara_objetos_dinamica = cv2.dilate(mascara_objetos_dinamica, kernel_ajuste, iterations=1)
-            else:
-                mascara_objetos_dinamica = cv2.erode(mascara_objetos_dinamica, kernel_ajuste, iterations=1)
+        # 3. Limpeza morfológica inicial para garantir o formato sólido do objeto
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        abertura = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel, iterations=2)
+        fundo_da_imagem = cv2.dilate(abertura, kernel, iterations=3)
+        
+        # 4. Transformada de Distância: Encontra o centro exato de cada célula indepedente de estarem grudadas
+        dist_transform = cv2.distanceTransform(abertura, cv2.DIST_L2, 5)
+        # O limite de 0.4 garante a separação sem perder células pequenas (ajuste automático)
+        _, primeiro_plano_certo = cv2.threshold(dist_transform, 0.4 * dist_transform.max(), 255, 0)
+        
+        # 5. Descobrir a região cinzenta onde as células se encostam (borda compartilhada)
+        primeiro_plano_certo = np.uint8(primeiro_plano_certo)
+        regiao_desconhecida = cv2.subtract(fundo_da_imagem, primeiro_plano_certo)
+        
+        # 6. Rotular os marcadores individuais de cada célula encontrada
+        _, marcadores = cv2.connectedComponents(primeiro_plano_certo)
+        marcadores = marcadores + 1
+        marcadores[regiao_desconhecida == 255] = 0
+        
+        # 7. Aplicar o divisor de águas (Watershed) na imagem original
+        marcadores = cv2.watershed(img, marcadores)
+        
+        # Criar uma máscara limpa contendo as divisões exatas geradas pelo Watershed
+        mascara_objetos_dinamica = np.zeros_like(thresh)
+        mascara_objetos_dinamica[marcadores > 1] = 255
 
-        # Configurações padrão de limites de cores auxiliares
+        # --- DEFINIÇÃO DOS LIMITES DE CORES ORIGINAIS (HSV) ---
         lower_red1, upper_red1 = np.array([0, 40, 40]), np.array([10, 255, 255])
         lower_red2, upper_red2 = np.array([160, 40, 40]), np.array([179, 255, 255])
         lower_green, upper_green = np.array([35, 40, 40]), np.array([85, 255, 255])
@@ -87,26 +92,21 @@ if arquivos_uploaddos:
         mask_yellow = cv2.inRange(hsv, lower_yellow, upper_yellow)
         mask_blue = cv2.inRange(hsv, lower_blue, upper_blue)
 
-        # INTERSECÇÃO DINÂMICA
+        # INTERSECÇÃO: Junta as cores com a máscara dividida do Watershed
         mask_red = cv2.bitwise_and(mask_red, mascara_objetos_dinamica)
         mask_green = cv2.bitwise_and(mask_green, mascara_objetos_dinamica)
         mask_yellow = cv2.bitwise_and(mask_yellow, mascara_objetos_dinamica)
         mask_blue = cv2.bitwise_and(mask_blue, mascara_objetos_dinamica)
 
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
-        mask_red = cv2.morphologyEx(mask_red, cv2.MORPH_CLOSE, kernel)
-        mask_green = cv2.morphologyEx(mask_green, cv2.MORPH_CLOSE, kernel)
-        mask_yellow = cv2.morphologyEx(mask_yellow, cv2.MORPH_CLOSE, kernel)
-        mask_blue = cv2.morphologyEx(mask_blue, cv2.MORPH_CLOSE, kernel)
-
+        # Filtro de contornos externos refinados pelas linhas divisórias
         contornos_vermelhos, _ = cv2.findContours(mask_red, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         contornos_verdes, _ = cv2.findContours(mask_green, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         contornos_amarelos, _ = cv2.findContours(mask_yellow, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         contornos_azuis, _ = cv2.findContours(mask_blue, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
+        area_minima_involucro = 150 
         areas_celulas_um2 = []
 
-        # Função interna com formatação estrita de recuos (4 espaços por nível)
         def processar_contornos_dinamicos(contornos, cor_bgr):
             qtd = 0
             for c in contornos:
@@ -127,7 +127,7 @@ if arquivos_uploaddos:
             
         total_celulas = qtd_vermelhas + qtd_verdes + qtd_amarelas + qtd_azuis
 
-        # --- MÉTRICAS DE ÁREA ---
+        # --- MÉTRICAS DE ÁREA EM MICRÔMETROS ---
         if areas_celulas_um2:
             area_media = round(float(np.mean(areas_celulas_um2)), 2)
             area_maxima = round(float(np.max(areas_celulas_um2)), 2)
@@ -155,7 +155,7 @@ if arquivos_uploaddos:
 
         st.write(f"#### Células Identificadas: {arquivo.name}")
         img_rgb = cv2.cvtColor(img_marcada, cv2.COLOR_BGR2RGB)
-        st.image(img_rgb, caption=f"Análise de {arquivo.name}", use_container_width=True)
+        st.image(img_rgb, caption=f"Análise automática de {arquivo.name}", use_container_width=True)
 
     if dados_resumo:
         df_resumo = pd.DataFrame(dados_resumo)
@@ -168,7 +168,7 @@ if arquivos_uploaddos:
         st.download_button(
             label="📥 Baixar Relatório Avançado (CSV)",
             data=csv_resumo,
-            file_name="analise_avancada_celulas.csv",
+            file_name="analise_automatica_celulas.csv",
             mime="text/csv"
         )
     else:

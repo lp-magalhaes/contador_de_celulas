@@ -28,33 +28,20 @@ if arquivos_uploaddos:
             st.error(f"Erro ao ler o arquivo: {arquivo.name}")
             continue
             
+        # Criar uma cópia para desenhar as marcações sem alterar a matriz original de análise
+        img_marcada = img.copy()
+            
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
-        # --- CÁLCULO DO FATOR DE CONVERSÃO PARA MICRÔMETROS ---
-        # Dimensões reais conhecidas: 320 x 320 micrometros
-        altura_px, largura_px = img.shape[:2]
-        area_total_px = altura_px * largura_px
-        area_total_um2 = 320 * 320  # 102400 um^2
-        
-        # Fator que converte 1 pixel quadrado para micrometro quadrado
-        fator_conversao_area = area_total_um2 / area_total_px
 
         # 1. CÁLCULO DA LUMINOSIDADE MÉDIA DA IMAGEM INTEIRA
         luminosidade_media_imagem = round(float(cv2.mean(gray)[0]), 2)
 
         # --- DEFINIÇÃO DOS LIMITES DE CORES (HSV) ---
-        # Vermelho (Faixa 1 e 2)
         lower_red1, upper_red1 = np.array([0, 40, 40]), np.array([10, 255, 255])
         lower_red2, upper_red2 = np.array([160, 40, 40]), np.array([179, 255, 255])
-        
-        # Verde
         lower_green, upper_green = np.array([35, 40, 40]), np.array([85, 255, 255])
-        
-        # Amarelo (Fica entre o Vermelho e o Verde)
         lower_yellow, upper_yellow = np.array([11, 40, 40]), np.array([34, 255, 255])
-        
-        # Azul (Fica após o Verde)
         lower_blue, upper_blue = np.array([90, 40, 40]), np.array([130, 255, 255])
 
         # Criar Máscaras de Cor
@@ -67,7 +54,6 @@ if arquivos_uploaddos:
         mask_blue = cv2.inRange(hsv, lower_blue, upper_blue)
 
         # --- OPERAÇÕES MORFOLÓGICAS ---
-        # Fecha as bordas pontilhadas e elimina pequenos pontos isolados
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
         mask_red = cv2.morphologyEx(mask_red, cv2.MORPH_CLOSE, kernel)
         mask_green = cv2.morphologyEx(mask_green, cv2.MORPH_CLOSE, kernel)
@@ -83,54 +69,46 @@ if arquivos_uploaddos:
         # ÁREA MÍNIMA DO INVÓLUCRO (Filtro de ruído)
         area_minima_involucro = 150 
 
-        # Lista para guardar o tamanho de todas as células detectadas nesta imagem
-        areas_celulas_um2 = []
+        # Lista para guardar o tamanho de todas as células detectadas (Agora puramente em Pixels)
+        areas_celulas_px = []
 
-        # Processar Células Vermelhas
-        qtd_vermelhas = 0
-        for c in contornos_vermelhos:
-            area_px = cv2.contourArea(c)
-            if area_px >= area_minima_involucro: 
-                qtd_vermelhas += 1
-                areas_celulas_um2.append(area_px * fator_conversao_area)
+        # Função auxiliar para processar contornos e desenhar círculos
+        def processar_contornos(contornos, cor_bgr):
+            qtd = 0
+            for c in contornos:
+                area_px = cv2.contourArea(c)
+                if area_px >= area_minima_involucro: 
+                    qtd += 1
+                    areas_celulas_px.append(area_px)
+                    
+                    # Calcular o círculo mínimo delimitador para a célula
+                    (x, y), raio = cv2.minEnclosingCircle(c)
+                    centro = (int(x), int(y))
+                    raio = int(raio)
+                    
+                    # Desenhar o círculo na imagem (espessura 2)
+                    cv2.circle(img_marcada, centro, raio, cor_bgr, 2)
+            return qtd
 
-        # Processar Células Verdes
-        qtd_verdes = 0
-        for c in contornos_verdes:
-            area_px = cv2.contourArea(c)
-            if area_px >= area_minima_involucro: 
-                qtd_verdes += 1
-                areas_celulas_um2.append(area_px * fator_conversao_area)
-
-        # Processar Células Amarelas
-        qtd_amarelas = 0
-        for c in contornos_amarelos:
-            area_px = cv2.contourArea(c)
-            if area_px >= area_minima_involucro: 
-                qtd_amarelas += 1
-                areas_celulas_um2.append(area_px * fator_conversao_area)
-
-        # Processar Células Azuis
-        qtd_azuis = 0
-        for c in contornos_azuis:
-            area_px = cv2.contourArea(c)
-            if area_px >= area_minima_involucro: 
-                qtd_azuis += 1
-                areas_celulas_um2.append(area_px * fator_conversao_area)
+        # Processar cada grupo de cor (Cores em BGR para o OpenCV)
+        qtd_vermelhas = processar_contornos(contornos_vermelhos, (0, 0, 255))
+        qtd_verdes = processar_contornos(contornos_verdes, (0, 255, 0))
+        qtd_amarelos = processar_contornos(contornos_amarelos, (0, 255, 255))
+        qtd_azuis = processar_contornos(contornos_azuis, (255, 0, 0))
             
         # Calcular o total geral desta imagem
-        total_celulas = qtd_vermelhas + qtd_verdes + qtd_amarelas + qtd_azuis
+        total_celulas = qtd_vermelhas + qtd_verdes + qtd_amarelos + qtd_azuis
 
-        # --- CÁLCULO DAS MÉTRICAS DE ÁREA ---
-        if areas_celulas_um2:
-            area_media = round(float(np.mean(areas_celulas_um2)), 2)
-            area_maxima = round(float(np.max(areas_celulas_um2)), 2)
-            area_minima = round(float(np.min(areas_celulas_um2)), 2)
+        # --- CÁLCULO DAS MÉTRICAS DE ÁREA (EM PIXELS) ---
+        if areas_celulas_px:
+            area_media = round(float(np.mean(areas_celulas_px)), 2)
+            area_maxima = round(float(np.max(areas_celulas_px)), 2)
+            area_minima = round(float(np.min(areas_celulas_px)), 2)
             
-            # Cálculo da soma total das áreas para normalizar a luminosidade
-            area_total_celulas_um2 = sum(areas_celulas_um2)
+            # Cálculo da soma total das áreas em pixel
+            area_total_celulas_px = sum(areas_celulas_px)
             # Luminosidade dividida pela área total ocupada pelas células
-            luminosidade_por_area = round(luminosidade_media_imagem / area_total_celulas_um2, 6)
+            luminosidade_por_area = round(luminosidade_media_imagem / area_total_celulas_px, 6)
         else:
             area_media, area_maxima, area_minima = 0.0, 0.0, 0.0
             luminosidade_por_area = 0.0
@@ -140,15 +118,21 @@ if arquivos_uploaddos:
             "Imagem": arquivo.name,
             "Invólucros Vermelhos": qtd_vermelhas,
             "Invólucros Verdes": qtd_verdes,
-            "Invólucros Amarelos": qtd_amarelas,
+            "Invólucros Amarelos": qtd_amarelos,
             "Invólucros Azuis": qtd_azuis,
             "Total de Células": total_celulas,
             "Luminosidade Média da Imagem": luminosidade_media_imagem,
-            "Área Média (µm²)": area_media,
-            "Área Máxima (µm²)": area_maxima,
-            "Área Mínima (µm²)": area_minima,
-            "Luminosidade por Área (L/µm²)": luminosidade_por_area
+            "Área Média (px)": area_media,
+            "Área Máxima (px)": area_maxima,
+            "Área Mínima (px)": area_minima,
+            "Luminosidade por Área (L/px)": luminosidade_por_area
         })
+
+        # --- EXIBIÇÃO DA IMAGEM PROCESSADA ---
+        st.write(f"#### Visualização: {arquivo.name}")
+        # Converter BGR para RGB para o Streamlit exibir corretamente
+        img_rgb = cv2.cvtColor(img_marcada, cv2.COLOR_BGR2RGB)
+        st.image(img_rgb, caption=f"Células identificadas na imagem {arquivo.name}", use_container_width=True)
 
     # Mostrar resultados e gerar o botão de download do CSV
     if dados_resumo:
@@ -162,7 +146,7 @@ if arquivos_uploaddos:
         st.download_button(
             label="📥 Baixar Relatório Multicores (CSV)",
             data=csv_resumo,
-            file_name="analise_multicores_celulas.csv",
+            file_name="analise_multicores_celulas_pixels.csv",
             mime="text/csv"
         )
     else:
